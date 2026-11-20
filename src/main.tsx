@@ -8,6 +8,7 @@ import { act, enter, errorText, signIn, supabase } from './api'
 import { inviteCode, isOnline, validNickname, videoUrl, type Room } from './model'
 import { Player } from './Player'
 import { TabPlayer } from './TabPlayer'
+import { captureOptions, qualityProfiles, type QualityProfile } from './rtcQuality'
 import { Button } from './ui/button'
 import { useRoom } from './useRoom'
 import './style.css'
@@ -155,7 +156,8 @@ function RoomView({ id, user, exit }: { id: string; user: string; exit: (reason?
   const [copied, setCopied] = useState(false)
   const [busy, setBusy] = useState(false)
   const [selection, setSelection] = useState<'tab' | 'video'>('tab')
-  const [capture, setCapture] = useState<{ media: MediaStream; stream: string }>()
+  const [quality, setQuality] = useState<QualityProfile>('balanced')
+  const [capture, setCapture] = useState<{ media: MediaStream; stream: string; quality: QualityProfile }>()
   const localCapture = useRef<typeof capture>(undefined)
   const alive = useRef(true)
   const actionPending = useRef(false)
@@ -204,12 +206,7 @@ function RoomView({ id, user, exit }: { id: string; user: string; exit: (reason?
   async function startCapture() {
     let media: MediaStream
     try {
-      media = await navigator.mediaDevices.getDisplayMedia({
-        video: { displaySurface: 'browser', width: { ideal: 1920, max: 1920 }, height: { ideal: 1080, max: 1080 },
-          frameRate: { ideal: 30, max: 30 } },
-        audio: true,
-        preferCurrentTab: false,
-      } as DisplayMediaStreamOptions)
+      media = await navigator.mediaDevices.getDisplayMedia(captureOptions(quality))
     } catch (error) {
       if ((error as Error).name === 'NotAllowedError') throw new Error('Захват отменён или браузер не дал доступ к вкладке.')
       throw error
@@ -226,12 +223,13 @@ function RoomView({ id, user, exit }: { id: string; user: string; exit: (reason?
       const surface = track?.getSettings().displaySurface
       if (!track || (surface && surface !== 'browser')) throw new Error('Выбери вкладку браузера в окне захвата.')
       if (!alive.current) return
+      if ('contentHint' in track) track.contentHint = 'motion'
       track.addEventListener('ended', finish, { once: true })
       const next = await act<Room>(id, 'start_tab')
       stream = next.stream_id
       if (!stream || !alive.current || track.readyState === 'ended') return finish()
       stopLocal()
-      localCapture.current = { media, stream }
+      localCapture.current = { media, stream, quality }
       setCapture(localCapture.current)
       accept(next)
       if (!media.getAudioTracks().length) setMessage('Вкладка передаётся без звука. При выборе вкладки включи «Поделиться звуком», если браузер это поддерживает.')
@@ -256,6 +254,8 @@ function RoomView({ id, user, exit }: { id: string; user: string; exit: (reason?
         <Button variant="secondary" onClick={() => void perform(async () => {
           const link = new URL(location.href)
           link.hash = 'room=' + room.invite
+          link.searchParams.delete('webrtc')
+          link.searchParams.delete('rtc-codec')
           await navigator.clipboard.writeText(link.href)
           setCopied(true)
         })}>{copied ? <Check size={17} /> : <Link2 size={17} />}{copied ? 'Скопировано' : 'Ссылка-приглашение'}</Button>
@@ -267,7 +267,8 @@ function RoomView({ id, user, exit }: { id: string; user: string; exit: (reason?
         {room.mode === 'video' && room.source ? <Player key={room.source} room={room} offset={offset} command={command}
           disabled={busy || !connected} report={setMessage} /> :
           room.mode === 'tab' && room.stream_id ? <TabPlayer key={room.stream_id} room={room} user={user}
-            capture={capture?.stream === room.stream_id ? capture.media : null} viewers={viewers} report={setMessage} /> :
+            capture={capture?.stream === room.stream_id ? capture.media : null} quality={capture?.quality ?? 'balanced'}
+            viewers={viewers} report={setMessage} /> :
             <div className="player empty-player"><span className="tile-icon"><MonitorPlay size={32} /></span>
               <h2>{host ? 'Что смотрим?' : 'Ждём хоста'}</h2>
               <p>{host ? 'Запусти трансляцию вкладки или добавь ссылку на видео.' : 'Видео появится, когда хост выберет источник.'}</p>
@@ -293,6 +294,14 @@ function RoomView({ id, user, exit }: { id: string; user: string; exit: (reason?
             onClick={() => { stopLocal(); void command('stop_tab', { stream: room.stream_id }) }}>
             <Square size={16} /> Остановить трансляцию
           </Button> : <>
+            <label className="quality-selector">
+              Качество трансляции
+              <select value={quality} disabled={busy} onChange={(event) => setQuality(event.target.value as QualityProfile)}>
+                {Object.entries(qualityProfiles).map(([key, profile]) => <option key={key} value={key}>
+                  {profile.label} · до {profile.height}p / {profile.fps} FPS
+                </option>)}
+              </select>
+            </label>
             <Button disabled={busy || !connected || !tab} onClick={() => void perform(startCapture)}>
               <Radio size={17} /> Транслировать вкладку
             </Button>
@@ -329,4 +338,3 @@ function RoomView({ id, user, exit }: { id: string; user: string; exit: (reason?
 }
 
 createRoot(document.getElementById('root')!).render(<App />)
-

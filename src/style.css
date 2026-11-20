@@ -109,6 +109,14 @@ label { font-size: .88rem; font-weight: 600; }
 .source-panel, .roster { padding: 1rem; }
 .source-panel { display: grid; justify-items: start; gap: .75rem; margin-top: 1rem; }
 .source-panel .muted { font-size: .88rem; }
+.quality-selector { display: grid; gap: .35rem; max-width: 100%; }
+.quality-selector select {
+  appearance: none; cursor: pointer; max-width: 100%; border: 1px solid var(--line); border-radius: .65rem;
+  padding: .62rem 2rem .62rem .75rem; color: inherit; background-color: #11131b;
+  background-image: linear-gradient(45deg, transparent 50%, #aaa5ba 51%), linear-gradient(135deg, #aaa5ba 51%, transparent 50%);
+  background-position: calc(100% - 15px) 50%, calc(100% - 10px) 50%;
+  background-size: 5px 5px; background-repeat: no-repeat;
+}
 .video-form { display: flex; width: 100%; gap: .55rem; }
 .video-form .button { flex: none; }
 .roster h2 { display: flex; align-items: center; gap: .5rem; }
@@ -124,6 +132,13 @@ label { font-size: .88rem; font-weight: 600; }
 .member-label svg { display: inline; color: #e6be76; vertical-align: -.12em; }
 .member-actions { display: flex; gap: .1rem; }
 .member-actions .button { min-height: 2rem; padding: .35rem; }
+.rtc-diagnostics { margin-top: 1rem; padding: 1rem; }
+.rtc-diagnostics h2, .rtc-diagnostics .muted { margin-bottom: .55rem; }
+.rtc-diagnostics dl { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(13rem, 100%), 1fr)); gap: .5rem; margin: 0; }
+.rtc-diagnostics dl div { border-top: 1px solid var(--line); padding: .4rem 0; min-width: 0; }
+.rtc-diagnostics dt { font-size: .8rem; color: var(--muted); }
+.rtc-diagnostics dd { margin: .1rem 0 0; font-size: .88rem; overflow-wrap: anywhere; font-variant-numeric: tabular-nums; }
+.rtc-report, .rtc-diagnostics > .muted { margin-top: .8rem; }
 
 @media (max-width: 870px) { .room-grid { grid-template-columns: minmax(0, 1fr); } }
 @media (max-width: 600px) { .lobby-grid { grid-template-columns: minmax(0, 1fr); } }
