@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react'
 import { Maximize, MonitorPlay, Radio, RotateCw, Volume2, VolumeX } from 'lucide-react'
 import { act, errorText, supabase } from './api'
 import { fullscreen } from './Player'
+import { RtcDiagnostics, rtcDebugEnabled } from './RtcDiagnostics'
 import type { Room, Signal } from './model'
 import { Button } from './ui/button'
 
@@ -177,7 +178,7 @@ export function TabPlayer({ room, user, capture, viewers, report }: {
   }, [room.id, room.host, streamId, user, host, capture, retry])
 
   const showVideo = host ? capture : stream
-  return <div className="player" ref={frame}>
+  return <><div className="player" ref={frame}>
     <div className="screen">
       <video ref={video} playsInline autoPlay muted={host || muted} />
       {(!showVideo || (!host && status)) && <div className="media-message">
@@ -199,5 +200,5 @@ export function TabPlayer({ room, user, capture, viewers, report }: {
       <Button variant="ghost" aria-label="Полноэкранный режим" onClick={() => void fullscreen(frame.current, video.current)
         .catch((error: Error) => report(error.message))}><Maximize size={19} /></Button>
     </div>
-  </div>
+  </div>{rtcDebugEnabled() && <RtcDiagnostics peers={peers} video={video} host={host} capture={capture} />}</>
 }

@@ -329,4 +329,3 @@ function RoomView({ id, user, exit }: { id: string; user: string; exit: (reason?
 }
 
 createRoot(document.getElementById('root')!).render(<App />)
-
