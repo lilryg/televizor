@@ -1,6 +1,6 @@
-import { useEffect, useRef, useState, type RefObject } from 'react'
+import { useEffect, useRef, useState, type PointerEvent, type RefObject } from 'react'
 import { Pause, Play, Volume2, VolumeX } from 'lucide-react'
-import { formatTime, playbackPosition, type Room } from './model'
+import { formatTime, playbackPosition, seekPreview, type Room } from './model'
 import { Button } from './ui/button'
 import { FullscreenButton, usePlayerFullscreen } from './usePlayerFullscreen'
 
@@ -16,6 +16,7 @@ export function Player({ room, offset, disabled, command, report }:
   const [duration, setDuration] = useState(0)
   const [current, setCurrent] = useState(0)
   const [drag, setDrag] = useState<number>()
+  const [hover, setHover] = useState<{ offset: number; time: number }>()
   const [volume, setVolume] = useState(1)
 
   useEffect(() => {
@@ -93,6 +94,11 @@ export function Player({ room, offset, disabled, command, report }:
     await command('seek', { version: room.version, position: value })
   }
 
+  function previewAt(event: PointerEvent<HTMLInputElement>) {
+    const track = event.currentTarget.getBoundingClientRect()
+    return seekPreview(event.clientX - track.left, track.width, duration)
+  }
+
   return <div className="player" ref={view.frame} {...view.frameProps}><div className="player-stage">
     <div className="screen">
       <video ref={video} playsInline preload="metadata"
@@ -106,13 +112,21 @@ export function Player({ room, offset, disabled, command, report }:
       }}><Play size={17} /> Включить просмотр</Button>}
     </div>
     <div className="player-controls controls" data-hidden={view.controlsHidden || undefined} inert={view.controlsHidden}>
-      <input className="progress" type="range" aria-label="Позиция видео" min={0} max={duration || 1} step={0.1}
-        value={drag ?? Math.min(current, duration)} disabled={disabled || !duration}
-        onChange={(e) => setDrag(Number(e.currentTarget.value))}
-        onPointerUp={(e) => void seek(Number(e.currentTarget.value))}
-        onPointerCancel={() => setDrag(undefined)}
-        onBlur={() => { if (drag !== undefined) void seek(drag) }}
-        onKeyUp={(e) => { if (['ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown', 'Home', 'End', 'PageUp', 'PageDown'].includes(e.key)) void seek(Number(e.currentTarget.value)) }} />
+      <div className="seek-track" onPointerLeave={() => setHover(undefined)}>
+        <input className="progress" type="range" aria-label="Позиция видео" min={0} max={duration || 1} step={0.1}
+          value={drag ?? Math.min(current, duration)} disabled={disabled || !duration}
+          onPointerMove={(event) => {
+            if (event.pointerType === 'mouse' && duration && !disabled) setHover(previewAt(event))
+          }}
+          onChange={(e) => setDrag(Number(e.currentTarget.value))}
+          onPointerUp={(event) => void seek(event.pointerType === 'mouse'
+            ? previewAt(event).time : Number(event.currentTarget.value))}
+          onPointerCancel={() => setDrag(undefined)}
+          onBlur={() => { if (drag !== undefined) void seek(drag) }}
+          onKeyUp={(e) => { if (['ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown', 'Home', 'End', 'PageUp', 'PageDown'].includes(e.key)) void seek(Number(e.currentTarget.value)) }} />
+        {hover && duration > 0 && !disabled && <span className="seek-tooltip" aria-hidden="true"
+          style={{ left: `clamp(2rem, ${hover.offset}px, calc(100% - 2rem))` }}>{formatTime(hover.time)}</span>}
+      </div>
       <div className="control-row">
         <Button variant="ghost" disabled={disabled || !!mediaError} aria-label={room.paused ? 'Воспроизвести' : 'Пауза'}
           onClick={() => void command(room.paused ? 'play' : 'pause', {

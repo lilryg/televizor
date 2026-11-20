@@ -1,8 +1,8 @@
 import { useEffect, useRef, useState } from 'react'
-import { act, errorText, supabase } from './api'
+import { act, errorText, leaveOnPageHide, supabase } from './api'
 import type { Member, Room } from './model'
 
-export function useRoom(id: string, user: string, onClosed: (message: string) => void) {
+export function useRoom(id: string, user: string, visit: string, onClosed: (message: string) => void) {
   const [room, setRoom] = useState<Room>()
   const [members, setMembers] = useState<Member[]>([])
   const [connected, setConnected] = useState(false)
@@ -37,7 +37,7 @@ export function useRoom(id: string, user: string, onClosed: (message: string) =>
       pulseRunning = true
       const start = Date.now()
       try {
-        const result = await act<{ now: string }>(id, 'heartbeat')
+        const result = await act<{ now: string }>(id, 'heartbeat', { visit })
         if (!alive) return
         offset.current = Date.parse(result.now) - (start + Date.now()) / 2
         const { data, error } = await client.from('tv_rooms').select().eq('id', id).maybeSingle()
@@ -50,7 +50,7 @@ export function useRoom(id: string, user: string, onClosed: (message: string) =>
       } catch (error) {
         if (!alive) return
         const message = errorText(error)
-        if (/Доступ к комнате закрыт/.test(message)) close.current(message)
+        if (/Доступ к комнате закрыт|Комната уже открыта в другой вкладке/.test(message)) close.current(message)
         else setProblem(message)
       } finally { pulseRunning = false }
     }
@@ -61,7 +61,7 @@ export function useRoom(id: string, user: string, onClosed: (message: string) =>
       })
       .on('postgres_changes', { event: '*', schema: 'public', table: 'tv_members', filter: 'room_id=eq.' + id }, (event) => {
         if (!alive) return
-        if ('user_id' in event.new && event.new.user_id === user && event.new.status === 'kicked') {
+        if ('user_id' in event.new && event.new.user_id === user && event.new.visit_id === visit && event.new.status === 'kicked') {
           close.current('Хост удалил тебя из комнаты.')
         } else refreshRoster()
       })
@@ -72,9 +72,13 @@ export function useRoom(id: string, user: string, onClosed: (message: string) =>
       })
 
     const offline = () => setConnected(false)
+    const pagehide = () => leaveOnPageHide(id, visit)
+    const pageshow = (event: PageTransitionEvent) => { if (event.persisted) location.reload() }
     const interval = setInterval(pulse, 30_000)
     window.addEventListener('online', pulse)
     window.addEventListener('offline', offline)
+    window.addEventListener('pagehide', pagehide)
+    window.addEventListener('pageshow', pageshow)
     void pulse()
     return () => {
       alive = false
@@ -82,9 +86,11 @@ export function useRoom(id: string, user: string, onClosed: (message: string) =>
       clearInterval(interval)
       window.removeEventListener('online', pulse)
       window.removeEventListener('offline', offline)
+      window.removeEventListener('pagehide', pagehide)
+      window.removeEventListener('pageshow', pageshow)
       void client.removeChannel(channel)
     }
-  }, [id, user])
+  }, [id, user, visit])
 
   return { room, members, connected, problem, offset, accept }
 }

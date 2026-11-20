@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
-import { inviteCode, validNickname, videoUrl, playbackPosition, formatTime, isOnline } from '../src/model.ts'
+import { inviteCode, validNickname, videoUrl, playbackPosition, formatTime, isOnline, seekPreview } from '../src/model.ts'
 
 test('accepts Cyrillic and Latin names with 2–20 Unicode characters', () => {
   for (const name of ['Ян', '  Film  ', '🙂🙂', 'я'.repeat(20)]) assert.ok(validNickname(name))
@@ -35,4 +35,11 @@ test('marks participants offline when their lease expires', () => {
   const seen = '2026-11-20T12:00:00Z'
   assert.ok(isOnline({ seen_at: seen }, Date.parse(seen) + 94_999))
   assert.equal(isOnline({ seen_at: seen }, Date.parse(seen) + 95_000), false)
+})
+
+test('previews the time under the pointer and clamps both ends of the seek bar', () => {
+  assert.deepEqual(seekPreview(-4, 216, 120), { offset: 0, time: 0 })
+  assert.deepEqual(seekPreview(58, 216, 120), { offset: 58, time: 30 })
+  assert.deepEqual(seekPreview(108, 216, 120), { offset: 108, time: 60 })
+  assert.deepEqual(seekPreview(260, 216, 120), { offset: 216, time: 120 })
 })
