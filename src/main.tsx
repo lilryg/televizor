@@ -160,7 +160,7 @@ function RoomView({ id, user, exit }: { id: string; user: string; exit: (reason?
   const alive = useRef(true)
   const actionPending = useRef(false)
   const host = room?.host === user
-  const tab = navigator.mediaDevices?.getDisplayMedia
+  const tab = typeof navigator.mediaDevices?.getDisplayMedia === 'function'
 
   function stopLocal() {
     localCapture.current?.media.getTracks().forEach((track) => track.stop())
@@ -329,3 +329,4 @@ function RoomView({ id, user, exit }: { id: string; user: string; exit: (reason?
 }
 
 createRoot(document.getElementById('root')!).render(<App />)
+
