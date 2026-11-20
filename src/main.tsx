@@ -4,10 +4,11 @@ import {
   Check, CircleAlert, Crown, DoorOpen, Film, Link2, LoaderCircle, MonitorPlay, Pencil,
   Plus, Radio, ScreenShare, Square, Tv, UserRoundMinus, Users,
 } from 'lucide-react'
-import { act, enter, errorText, signIn, supabase } from './api'
-import { inviteCode, isOnline, validNickname, videoUrl, type Room } from './model'
+import { act, enter, errorText, leaveOnPageHide, signIn, supabase } from './api'
+import { inviteCode, isOnline, validNickname, videoUrl, type Room, type RoomVisit } from './model'
 import { Player } from './Player'
 import { TabPlayer } from './TabPlayer'
+import { RecentRooms } from './RecentRooms'
 import { captureOptions, qualityProfiles, type QualityProfile } from './rtcQuality'
 import { Button } from './ui/button'
 import { useRoom } from './useRoom'
@@ -32,7 +33,8 @@ function App() {
   const [nickname, setNickname] = useState(() => localStorage.getItem(nicknameKey) || '')
   const [draft, setDraft] = useState(nickname)
   const [user, setUser] = useState('')
-  const [roomId, setRoomId] = useState('')
+  const [currentRoom, setCurrentRoom] = useState<RoomVisit>()
+  const roomId = currentRoom?.id
   const [code, setCode] = useState('')
   const [invite, setIncomingInvite] = useState(readInvite)
   const [editing, setEditing] = useState(false)
@@ -55,7 +57,7 @@ function App() {
   }, [])
 
   useEffect(() => {
-    if (user && invite && !roomId) void run(async () => setRoomId(await enter(nickname, invite)))
+    if (user && invite && !roomId) void run(async () => setCurrentRoom(await enter(nickname, { invitation: invite })))
   }, [user, invite])
 
   function submitName(event: FormEvent) {
@@ -63,7 +65,7 @@ function App() {
     const name = draft.trim()
     if (!validNickname(name)) return setMessage('Введи никнейм длиной от 2 до 20 символов.')
     void run(async () => {
-      if (roomId) await act(roomId, 'nick', { nickname: name })
+      if (currentRoom) await act(currentRoom.id, 'nick', { nickname: name, visit: currentRoom.visit })
       const session = user || await signIn()
       localStorage.setItem(nicknameKey, name)
       setNickname(name)
@@ -75,7 +77,7 @@ function App() {
   function exit(reason = '') {
     clearInvite()
     setIncomingInvite('')
-    setRoomId('')
+    setCurrentRoom(undefined)
     setMessage(reason)
   }
 
@@ -83,7 +85,7 @@ function App() {
     event.preventDefault()
     const invitation = inviteCode(code)
     if (!invitation) return setMessage('Вставь ссылку-приглашение или полный код комнаты.')
-    void run(async () => setRoomId(await enter(nickname, invitation)))
+    void run(async () => setCurrentRoom(await enter(nickname, { invitation })))
   }
 
   const nickForm = <form onSubmit={submitName} className="stack">
@@ -110,7 +112,7 @@ function App() {
         <span className="avatar small">{Array.from(nickname)[0]?.toUpperCase()}</span><span className="nav-nick">{nickname}</span><Pencil size={14} />
       </Button>
     </div></header>
-    {roomId ? <RoomView key={roomId} id={roomId} user={user} exit={exit} /> :
+    {currentRoom ? <RoomView key={currentRoom.visit} id={currentRoom.id} visit={currentRoom.visit} user={user} exit={exit} /> :
       <main className="lobby">
         <div className="intro">
           <h1>Кино вместе</h1>
@@ -121,7 +123,7 @@ function App() {
             <span className="tile-icon"><Film size={25} /></span>
             <h2>Свой кинозал</h2>
             <p>До 10 участников в комнате.</p>
-            <Button disabled={busy} onClick={() => void run(async () => setRoomId(await enter(nickname)))}>
+            <Button disabled={busy} onClick={() => void run(async () => setCurrentRoom(await enter(nickname)))}>
               {busy ? <LoaderCircle className="spin" size={17} /> : <Plus size={18} />} Создать комнату
             </Button>
           </section>
@@ -136,6 +138,9 @@ function App() {
           </section>
         </div>
         {message && !editing && <Notice>{message}</Notice>}
+        <RecentRooms disabled={busy} onJoin={(recentRoom) => void run(async () => {
+          setCurrentRoom(await enter(nickname, { recentRoom }))
+        })} />
       </main>}
     {editing && <div className="modal-backdrop" onClick={() => !busy && setEditing(false)}>
       <dialog className="panel modal" open aria-label="Изменить никнейм" onClick={(e) => e.stopPropagation()}
@@ -149,8 +154,8 @@ function App() {
   </>
 }
 
-function RoomView({ id, user, exit }: { id: string; user: string; exit: (reason?: string) => void }) {
-  const { room, members, connected, problem, offset, accept } = useRoom(id, user, exit)
+function RoomView({ id, user, visit, exit }: { id: string; user: string; visit: string; exit: (reason?: string) => void }) {
+  const { room, members, connected, problem, offset, accept } = useRoom(id, user, visit, exit)
   const [message, setMessage] = useState('')
   const [url, setUrl] = useState('')
   const [copied, setCopied] = useState(false)
@@ -197,7 +202,7 @@ function RoomView({ id, user, exit }: { id: string; user: string; exit: (reason?
 
   function command(name: string, args: Record<string, unknown> = {}) {
     return perform(async () => {
-      const next = await act<Room>(id, name, args)
+      const next = await act<Room>(id, name, { ...args, visit })
       if (name === 'leave') exit()
       else accept(next)
     })
@@ -215,7 +220,7 @@ function RoomView({ id, user, exit }: { id: string; user: string; exit: (reason?
     let stream: string | null = null
     const finish = () => {
       if (localCapture.current?.media === media) stopLocal()
-      if (stream) void act<Room>(id, 'stop_tab', { stream }).then((next) => {
+      if (stream) void act<Room>(id, 'stop_tab', { stream, visit }).then((next) => {
         if (alive.current) accept(next)
       }).catch(() => {})
     }
@@ -225,7 +230,7 @@ function RoomView({ id, user, exit }: { id: string; user: string; exit: (reason?
       if (!alive.current) return
       if ('contentHint' in track) track.contentHint = 'motion'
       track.addEventListener('ended', finish, { once: true })
-      const next = await act<Room>(id, 'start_tab')
+      const next = await act<Room>(id, 'start_tab', { visit })
       stream = next.stream_id
       if (!stream || !alive.current || track.readyState === 'ended') return finish()
       stopLocal()
@@ -241,11 +246,12 @@ function RoomView({ id, user, exit }: { id: string; user: string; exit: (reason?
   if (!room) return <main className="room-shell">
     <p role="status" className="loading"><LoaderCircle className="spin" size={20} /> Открываем комнату…</p>
     {problem && <Notice>{problem}</Notice>}
-    <Button variant="secondary" onClick={() => exit()}>В главное меню</Button>
+    <Button variant="secondary" onClick={() => { leaveOnPageHide(id, visit); exit() }}>В главное меню</Button>
   </main>
 
   const now = Date.now() + offset.current
-  const viewers = members.filter((member) => member.user_id !== user && isOnline(member, now)).map((member) => member.user_id)
+  const activeMembers = members.filter((member) => isOnline(member, now))
+  const viewers = activeMembers.filter((member) => member.user_id !== user).map((member) => member.user_id)
   return <main className="room-shell">
     <div className="room-heading">
       <div><div className={'connection' + (connected ? ' online' : '')}><i /> {connected ? 'На связи' : 'Восстанавливаем связь'}</div>
@@ -266,7 +272,7 @@ function RoomView({ id, user, exit }: { id: string; user: string; exit: (reason?
       <div className="room-main">
         {room.mode === 'video' && room.source ? <Player key={room.source} room={room} offset={offset} command={command}
           disabled={busy || !connected} report={setMessage} /> :
-          room.mode === 'tab' && room.stream_id ? <TabPlayer key={room.stream_id} room={room} user={user}
+          room.mode === 'tab' && room.stream_id ? <TabPlayer key={room.stream_id} room={room} user={user} visit={visit}
             capture={capture?.stream === room.stream_id ? capture.media : null} quality={capture?.quality ?? 'balanced'}
             viewers={viewers} report={setMessage} /> :
             <div className="player empty-player"><span className="tile-icon"><MonitorPlay size={32} /></span>
@@ -311,21 +317,20 @@ function RoomView({ id, user, exit }: { id: string; user: string; exit: (reason?
         </section>}
       </div>
       <aside className="panel roster">
-        <h2><Users size={19} /> Участники <span className="counter">{members.filter((m) => isOnline(m, now)).length}/10</span></h2>
+        <h2><Users size={19} /> Участники <span className="counter">{activeMembers.length}/10</span></h2>
         <ul>
-          {members.map((member) => {
-            const online = isOnline(member, now)
+          {activeMembers.map((member) => {
             const self = member.user_id === user
             return <li key={member.user_id}>
               <span className="avatar">{Array.from(member.nickname)[0]?.toUpperCase()}</span>
               <span className="member-label"><strong>{member.nickname}{self && ' (ты)'}</strong>
-                <small>{member.user_id === room.host && <><Crown size={13} /> Хост · </>}{online ? 'В сети' : 'Отключён'}</small>
+                <small>{member.user_id === room.host && <><Crown size={13} /> Хост · </>}В сети</small>
               </span>
               {host && !self && <div className="member-actions">
                 <Button variant="ghost" title="Передать роль хоста" aria-label={'Передать роль хоста: ' + member.nickname}
-                  disabled={busy || !online} onClick={() => void command('transfer', { target: member.user_id })}><Crown size={16} /></Button>
+                  disabled={busy} onClick={() => void command('transfer', { target: member.user_id })}><Crown size={16} /></Button>
                 <Button variant="ghost" title="Удалить участника" aria-label={'Удалить участника: ' + member.nickname} disabled={busy}
-                  onClick={() => { if (confirm('Удалить участника «' + member.nickname + '» и обновить приглашение?')) void command('kick', { target: member.user_id }) }}>
+                  onClick={() => { if (confirm('Исключить участника «' + member.nickname + '»? Он сможет войти снова.')) void command('kick', { target: member.user_id }) }}>
                   <UserRoundMinus size={16} />
                 </Button>
               </div>}

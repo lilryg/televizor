@@ -23,8 +23,8 @@ type Peer = {
   disconnectedAt?: number
 }
 
-export function TabPlayer({ room, user, capture, quality, viewers, report }: {
-  room: Room; user: string; capture: MediaStream | null; quality: QualityProfile
+export function TabPlayer({ room, user, visit, capture, quality, viewers, report }: {
+  room: Room; user: string; visit?: string; capture: MediaStream | null; quality: QualityProfile
   viewers: string[]; report: (message: string) => void
 }) {
   const video = useRef<HTMLVideoElement>(null)
@@ -76,7 +76,7 @@ export function TabPlayer({ room, user, capture, quality, viewers, report }: {
     const pending = new Map<string, RTCIceCandidateInit[]>()
     const lastReady = new Map<string, number>()
     const send = (target: string, attempt: string, kind: Signal['kind'], data: Signal['data']) =>
-      act(room.id, 'signal', { target, attempt, kind, data, stream: streamId })
+      act(room.id, 'signal', { target, attempt, kind, data, stream: streamId, visit })
 
     function makePeer(target: string, attempt: string) {
       const old = activePeers.get(target)
@@ -230,7 +230,7 @@ export function TabPlayer({ room, user, capture, quality, viewers, report }: {
       activePeers.clear()
       void client.removeChannel(channel)
     }
-  }, [room.id, room.host, streamId, user, host, capture, quality, retry])
+  }, [room.id, room.host, streamId, user, visit, host, capture, quality, retry])
 
   const showVideo = host ? capture : stream
   return <><div className="player" ref={view.frame} {...view.frameProps}><div className="player-stage">

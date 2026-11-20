@@ -13,6 +13,8 @@ export type Room = {
 }
 
 export type Member = { user_id: string; nickname: string; status: string; seen_at: string }
+export type RoomVisit = { id: string; visit: string }
+export type RecentRoom = { id: string; last_visited_at: string; was_host: boolean; participants: number }
 export type Signal = {
   id: number
   stream_id: string
@@ -52,4 +54,13 @@ export function formatTime(seconds: number) {
   const hours = Math.floor(elapsed / 3600)
   const minutes = Math.floor(elapsed / 60) % 60
   return (hours ? hours + ':' + String(minutes).padStart(2, '0') : minutes) + ':' + String(elapsed % 60).padStart(2, '0')
+}
+
+export function seekPreview(pointer: number, width: number, duration: number) {
+  const offset = Math.max(0, Math.min(width, pointer))
+  // Thumb centers are inset from both edges of the native range input.
+  const inset = 8
+  const usable = Math.max(1, width - inset * 2)
+  const fraction = Math.max(0, Math.min(1, (offset - inset) / usable))
+  return { offset, time: Math.min(duration, Math.round(duration * fraction * 10) / 10) }
 }
