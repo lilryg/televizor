@@ -1,0 +1,60 @@
+<!doctype html>
+<html lang="ru">
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Тестовый сигнал WebRTC</title>
+  <style>
+    * { box-sizing: border-box; }
+    body { margin: 0; min-height: 100dvh; display: grid; place-items: center; padding: 1rem;
+      background: #0d0f14; color: #f5f5f7; font: 1rem system-ui; }
+    main { width: min(100%, 62rem); }
+    canvas { display: block; width: 100%; background: #161a24; border: 1px solid #34384a; border-radius: 12px; }
+    button { background: #9a8cff; color: #100b25; padding: .7rem 1rem; border: 0; border-radius: .55rem; font: inherit; cursor: pointer; }
+    p { color: #b6bbc8; }
+  </style>
+  <main>
+    <h1>Тестовый сигнал WebRTC</h1>
+    <canvas width="1920" height="1080" aria-label="Движущаяся шкала и время UTC"></canvas>
+    <p>Для проверки задержки открой эту страницу на вкладке хоста и сравни время на ней со временем в плеере зрителя.</p>
+    <button type="button" aria-pressed="false">Включить звуковые импульсы</button>
+  </main>
+  <script type="module">
+    const canvas = document.querySelector('canvas')
+    const ctx = canvas.getContext('2d')
+    const button = document.querySelector('button')
+    let audio
+    let lastSecond
+    let enabled = false
+    button.onclick = async () => {
+      audio ??= new AudioContext()
+      await audio.resume()
+      enabled = !enabled
+      button.setAttribute('aria-pressed', String(enabled))
+      button.textContent = enabled ? 'Выключить звуковые импульсы' : 'Включить звуковые импульсы'
+    }
+    function frame() {
+      const now = Date.now()
+      const phase = (now % 1000) / 1000
+      const second = Math.floor(now / 1000)
+      if (enabled && second !== lastSecond) {
+        const oscillator = audio.createOscillator()
+        const gain = audio.createGain()
+        oscillator.frequency.value = 700
+        gain.gain.value = 0.07
+        oscillator.connect(gain).connect(audio.destination)
+        oscillator.start()
+        oscillator.stop(audio.currentTime + 0.06)
+      }
+      lastSecond = second
+      ctx.fillStyle = phase < 0.08 ? '#45426b' : '#171a22'
+      ctx.fillRect(0, 0, canvas.width, canvas.height)
+      ctx.fillStyle = '#f5f5f7'
+      ctx.font = 'bold 176px monospace'
+      ctx.fillText(new Date(now).toISOString().slice(11, 23), 142, 570)
+      ctx.fillStyle = '#a79bff'
+      ctx.fillRect(120 + phase * 1610, 760, 70, 120)
+      requestAnimationFrame(frame)
+    }
+    frame()
+  </script>
+</html>

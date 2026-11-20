@@ -3,6 +3,7 @@ import { Maximize, MonitorPlay, Radio, RotateCw, Volume2, VolumeX } from 'lucide
 import { act, errorText, supabase } from './api'
 import { fullscreen } from './Player'
 import { RtcDiagnostics, rtcDebugEnabled } from './RtcDiagnostics'
+import { preferVideoCodec, tuneVideoSender, type QualityProfile } from './rtcQuality'
 import type { Room, Signal } from './model'
 import { Button } from './ui/button'
 
@@ -14,10 +15,17 @@ function iceServers(): RTCIceServer[] {
   return [{ urls: 'stun:stun.l.google.com:19302' }, { urls: 'stun:stun.cloudflare.com:3478' }]
 }
 
-type Peer = { pc: RTCPeerConnection; attempt: string; candidateQueue: RTCIceCandidateInit[] }
+type Peer = {
+  pc: RTCPeerConnection
+  attempt: string
+  candidateQueue: RTCIceCandidateInit[]
+  startedAt: number
+  disconnectedAt?: number
+}
 
-export function TabPlayer({ room, user, capture, viewers, report }: {
-  room: Room; user: string; capture: MediaStream | null; viewers: string[]; report: (message: string) => void
+export function TabPlayer({ room, user, capture, quality, viewers, report }: {
+  room: Room; user: string; capture: MediaStream | null; quality: QualityProfile
+  viewers: string[]; report: (message: string) => void
 }) {
   const frame = useRef<HTMLDivElement>(null)
   const video = useRef<HTMLVideoElement>(null)
@@ -25,15 +33,24 @@ export function TabPlayer({ room, user, capture, viewers, report }: {
   const [retry, setRetry] = useState(0)
   const [muted, setMuted] = useState(true)
   const [status, setStatus] = useState('Подключение к трансляции…')
+  const [playbackBlocked, setPlaybackBlocked] = useState(false)
   const [stream, setStream] = useState<MediaStream | null>(null)
   const host = room.host === user
   const streamId = room.stream_id!
 
   useEffect(() => {
     const element = video.current!
-    element.srcObject = host ? capture : stream
-    if (element.srcObject) void element.play().catch(() => setStatus('Нажми «Включить звук», чтобы начать просмотр.'))
-    return () => { element.srcObject = null }
+    const source = host ? capture : stream
+    let active = true
+    element.srcObject = source
+    setPlaybackBlocked(false)
+    if (source) void element.play().catch((error) => {
+      if (active && error.name === 'NotAllowedError') setPlaybackBlocked(true)
+    })
+    return () => {
+      active = false
+      element.srcObject = null
+    }
   }, [capture, stream, host])
 
   useEffect(() => {
@@ -57,6 +74,7 @@ export function TabPlayer({ room, user, capture, viewers, report }: {
     let chain = Promise.resolve()
     const processed = new Set<number>()
     const pending = new Map<string, RTCIceCandidateInit[]>()
+    const lastReady = new Map<string, number>()
     const send = (target: string, attempt: string, kind: Signal['kind'], data: Signal['data']) =>
       act(room.id, 'signal', { target, attempt, kind, data, stream: streamId })
 
@@ -64,7 +82,7 @@ export function TabPlayer({ room, user, capture, viewers, report }: {
       const old = activePeers.get(target)
       old?.pc.close()
       const pc = new RTCPeerConnection({ iceServers: iceServers() })
-      const peer = { pc, attempt, candidateQueue: pending.get(attempt) || [] }
+      const peer: Peer = { pc, attempt, candidateQueue: pending.get(attempt) || [], startedAt: performance.now() }
       pending.delete(attempt)
       activePeers.set(target, peer)
       pc.onicecandidate = (event) => {
@@ -72,18 +90,37 @@ export function TabPlayer({ room, user, capture, viewers, report }: {
           void send(target, attempt, 'ice', event.candidate.toJSON()).catch(() => {})
         }
       }
-      if (capture) capture.getTracks().forEach((track) => pc.addTrack(track, capture))
+      if (capture) {
+        for (const track of capture.getTracks()) {
+          const sender = pc.addTrack(track, capture)
+          const transceiver = pc.getTransceivers().find((entry) => entry.sender === sender)
+          if (track.kind === 'video' && transceiver) preferVideoCodec(transceiver, true)
+        }
+      }
       if (!host) {
+        const fallbackStream = new MediaStream()
         pc.ontrack = (event) => {
-          if (activePeers.get(target) === peer && event.streams[0]) setStream(event.streams[0])
+          if (!active || activePeers.get(target) !== peer) return
+          if (!event.streams.length) fallbackStream.addTrack(event.track)
+          setStream((previous) => {
+            // Preserve one MediaStream for all audio/video tracks of this connection.
+            const received = event.streams[0] ?? fallbackStream
+            return previous === received ? previous : received
+          })
         }
         pc.onconnectionstatechange = () => {
           if (!active || activePeers.get(target) !== peer) return
           if (pc.connectionState === 'connected') {
             attempts = 0
+            peer.disconnectedAt = undefined
             setStatus('')
-          } else if (['disconnected', 'failed'].includes(pc.connectionState))
+          } else if (pc.connectionState === 'disconnected') {
+            peer.disconnectedAt ??= performance.now()
+            setStatus('Связь прервалась. Ожидаем восстановления…')
+          } else if (pc.connectionState === 'failed') {
             setStatus('Связь прервалась. Переподключаемся…')
+            void connect()
+          }
         }
       }
       return peer
@@ -94,9 +131,12 @@ export function TabPlayer({ room, user, capture, viewers, report }: {
       processed.add(signal.id)
       const { sender, attempt, kind, data } = signal
       if (host && kind === 'ready') {
-        if (activePeers.get(sender)?.attempt === attempt) return
+        if (signal.id <= (lastReady.get(sender) ?? 0) || activePeers.get(sender)?.attempt === attempt) return
+        lastReady.set(sender, signal.id)
         const { pc } = makePeer(sender, attempt)
         await pc.setLocalDescription(await pc.createOffer())
+        const videoSender = pc.getSenders().find((sender) => sender.track?.kind === 'video')
+        if (videoSender) await tuneVideoSender(videoSender, quality)
         if (active && pc.localDescription) await send(sender, attempt, 'offer', pc.localDescription.toJSON())
         return
       }
@@ -119,6 +159,9 @@ export function TabPlayer({ room, user, capture, viewers, report }: {
       await pc.setRemoteDescription(data as RTCSessionDescriptionInit)
       for (const candidate of candidateQueue.splice(0)) await pc.addIceCandidate(candidate).catch(() => {})
       if (!host) {
+        for (const transceiver of pc.getTransceivers()) {
+          if (transceiver.receiver.track.kind === 'video') preferVideoCodec(transceiver, false)
+        }
         await pc.setLocalDescription(await pc.createAnswer())
         if (active && pc.localDescription) await send(sender, attempt, 'answer', pc.localDescription.toJSON())
       }
@@ -132,7 +175,14 @@ export function TabPlayer({ room, user, capture, viewers, report }: {
 
     async function connect() {
       if (!active || !subscribed || host || recovering || !navigator.onLine) return
-      if (activePeers.get(room.host)?.pc.connectionState === 'connected') return
+      const peer = activePeers.get(room.host)
+      if (peer) {
+        const elapsed = performance.now()
+        const state = peer.pc.connectionState
+        if (state === 'connected') return
+        if ((state === 'new' || state === 'connecting') && elapsed - peer.startedAt < 15_000) return
+        if (state === 'disconnected' && elapsed - (peer.disconnectedAt ?? elapsed) < 8_000) return
+      }
       if (attempts >= 3) {
         setStatus('Не удалось соединиться с хостом. В некоторых сетях для трансляции нужен TURN.')
         return
@@ -156,16 +206,21 @@ export function TabPlayer({ room, user, capture, viewers, report }: {
         if (!active) return
         subscribed = state === 'SUBSCRIBED'
         if (!subscribed) {
-          if (!host) setStatus('Восстанавливаем связь с комнатой…')
+          if (!host && activePeers.get(room.host)?.pc.connectionState !== 'connected') {
+            setStatus('Восстанавливаем связь с комнатой…')
+          }
           return
         }
         if (host) {
           void client.from('tv_signals').select().eq('recipient', user).eq('stream_id', streamId).order('id')
             .then(({ data }) => { if (active) data?.forEach((signal) => enqueue(signal)) })
-        } else void connect()
+        } else {
+          if (activePeers.get(room.host)?.pc.connectionState === 'connected') setStatus('')
+          void connect()
+        }
       })
     const online = () => { attempts = 0; void connect() }
-    const timer = setInterval(connect, 10_000)
+    const timer = !host ? setInterval(connect, 2000) : undefined
     window.addEventListener('online', online)
     return () => {
       active = false
@@ -175,19 +230,23 @@ export function TabPlayer({ room, user, capture, viewers, report }: {
       activePeers.clear()
       void client.removeChannel(channel)
     }
-  }, [room.id, room.host, streamId, user, host, capture, retry])
+  }, [room.id, room.host, streamId, user, host, capture, quality, retry])
 
   const showVideo = host ? capture : stream
   return <><div className="player" ref={frame}>
     <div className="screen">
       <video ref={video} playsInline autoPlay muted={host || muted} />
-      {(!showVideo || (!host && status)) && <div className="media-message">
+      {!showVideo && <div className="media-message">
         <MonitorPlay size={28} />
-        <p>{host ? 'Захват вкладки завершён или открыт в другом окне.' : status}</p>
+        <p>{host ? 'Захват вкладки завершён или открыт в другом окне.' : status || 'Ожидаем видео…'}</p>
         {!host && <Button variant="secondary" onClick={() => { setStream(null); setRetry((value) => value + 1) }}>
           <RotateCw size={16} /> Переподключиться
         </Button>}
       </div>}
+      {!host && showVideo && playbackBlocked && <Button className="play-overlay" onClick={() => {
+        void video.current?.play().then(() => setPlaybackBlocked(false))
+          .catch(() => report('Браузер заблокировал воспроизведение.'))
+      }}>Включить просмотр</Button>}
     </div>
     <div className="controls control-row">
       <span className="live"><Radio size={17} /> Прямой эфир</span>
@@ -195,10 +254,17 @@ export function TabPlayer({ room, user, capture, viewers, report }: {
       {!host && <Button variant="ghost" onClick={() => {
         if (video.current) video.current.muted = !muted
         setMuted(!muted)
-        void video.current?.play().catch(() => report('Браузер заблокировал воспроизведение.'))
+        void video.current?.play().then(() => setPlaybackBlocked(false))
+          .catch(() => report('Браузер заблокировал воспроизведение.'))
       }}>{muted ? <VolumeX size={19} /> : <Volume2 size={19} />}{muted ? 'Включить звук' : 'Выключить звук'}</Button>}
       <Button variant="ghost" aria-label="Полноэкранный режим" onClick={() => void fullscreen(frame.current, video.current)
         .catch((error: Error) => report(error.message))}><Maximize size={19} /></Button>
     </div>
+    {!host && showVideo && status && <div className="controls control-row">
+      <span className="muted" role="status">{status}</span><div className="spacer" />
+      <Button variant="ghost" onClick={() => { setStream(null); setRetry((value) => value + 1) }}>
+        <RotateCw size={16} /> Переподключиться
+      </Button>
+    </div>}
   </div>{rtcDebugEnabled() && <RtcDiagnostics peers={peers} video={video} host={host} capture={capture} />}</>
 }

@@ -21,6 +21,10 @@ jobs:
       - run: |
           if [ -f package-lock.json ]; then npm ci; else npm install; fi
       - run: npm test
+      - name: Compare WebRTC profiles in Chromium
+        run: |
+          npx playwright install --with-deps --only-shell chromium
+          npm run test:webrtc
       - run: npm run build
         env:
           VITE_SUPABASE_URL: ${{ vars.VITE_SUPABASE_URL }}
