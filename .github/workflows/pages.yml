@@ -25,6 +25,8 @@ jobs:
         run: |
           npx playwright install --with-deps --only-shell chromium
           npm run test:webrtc
+      - name: Test mobile fullscreen controls in Chromium
+        run: npm run test:fullscreen
       - run: npm run build
         env:
           VITE_SUPABASE_URL: ${{ vars.VITE_SUPABASE_URL }}

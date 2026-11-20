@@ -91,8 +91,36 @@ label { font-size: .88rem; font-weight: 600; }
 .player { overflow: hidden; border: 1px solid var(--line); border-radius: 1rem; background: #0a0b10; }
 .screen, .empty-player { aspect-ratio: 16 / 9; position: relative; }
 .screen video { width: 100%; height: 100%; display: block; position: absolute; inset: 0; object-fit: contain; }
-.player:fullscreen { display: flex; flex-direction: column; }
-.player:fullscreen .screen { flex: 1; min-height: 0; }
+.video-viewport-open { overflow: hidden; }
+.player[data-player-mode="viewport"] {
+  position: fixed; inset: 0 auto auto 0; width: 100dvw; height: 100dvh;
+  z-index: 20; touch-action: manipulation;
+}
+.player:is(:fullscreen, [data-player-mode="viewport"]) { border: 0; border-radius: 0; background: #000; }
+.player:is(:fullscreen, [data-player-mode="viewport"]) .player-stage { position: relative; width: 100%; height: 100%; }
+.player:is(:fullscreen, [data-player-mode="viewport"]) .screen { width: 100%; height: 100%; aspect-ratio: auto; }
+.player:is(:fullscreen, [data-player-mode="viewport"]) .player-controls {
+  position: absolute; inset: auto 0 0; z-index: 1;
+  padding-bottom: env(safe-area-inset-bottom); background: #161923;
+  transition: transform .2s ease, opacity .2s ease, visibility 0s linear;
+}
+.player:is(:fullscreen, [data-player-mode="viewport"]) .player-controls[data-hidden] {
+  transform: translateY(100%); opacity: 0; visibility: hidden; pointer-events: none;
+  transition-delay: 0s, 0s, .2s;
+}
+.player:is(:fullscreen, [data-player-mode="viewport"]) .player-controls.controls {
+  padding-bottom: calc(.45rem + env(safe-area-inset-bottom));
+}
+@media (orientation: portrait) {
+  .player:is(:fullscreen, [data-player-mode="viewport"])[data-player-rotate] .player-stage {
+    position: absolute; top: 50%; left: 50%;
+    width: 100dvh; height: 100dvw;
+    transform: translate(-50%, -50%) rotate(90deg);
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .player:is(:fullscreen, [data-player-mode="viewport"]) .player-controls { transition: none; }
+}
 .empty-player, .media-message { display: grid; place-content: center; justify-items: center; text-align: center; gap: .65rem; padding: 1rem; }
 .empty-player { min-height: 12rem; background: radial-gradient(ellipse at center, #211a32, transparent 72%), #0a0b10; }
 .empty-player p { max-width: 30ch; }

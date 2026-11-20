@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
-import { Maximize, MonitorPlay, Radio, RotateCw, Volume2, VolumeX } from 'lucide-react'
+import { MonitorPlay, Radio, RotateCw, Volume2, VolumeX } from 'lucide-react'
 import { act, errorText, supabase } from './api'
-import { fullscreen } from './Player'
+import { FullscreenButton, usePlayerFullscreen } from './usePlayerFullscreen'
 import { RtcDiagnostics, rtcDebugEnabled } from './RtcDiagnostics'
 import { preferVideoCodec, tuneVideoSender, type QualityProfile } from './rtcQuality'
 import type { Room, Signal } from './model'
@@ -27,8 +27,8 @@ export function TabPlayer({ room, user, capture, quality, viewers, report }: {
   room: Room; user: string; capture: MediaStream | null; quality: QualityProfile
   viewers: string[]; report: (message: string) => void
 }) {
-  const frame = useRef<HTMLDivElement>(null)
   const video = useRef<HTMLVideoElement>(null)
+  const view = usePlayerFullscreen(video, report)
   const peers = useRef(new Map<string, Peer>())
   const [retry, setRetry] = useState(0)
   const [muted, setMuted] = useState(true)
@@ -233,7 +233,7 @@ export function TabPlayer({ room, user, capture, quality, viewers, report }: {
   }, [room.id, room.host, streamId, user, host, capture, quality, retry])
 
   const showVideo = host ? capture : stream
-  return <><div className="player" ref={frame}>
+  return <><div className="player" ref={view.frame} {...view.frameProps}><div className="player-stage">
     <div className="screen">
       <video ref={video} playsInline autoPlay muted={host || muted} />
       {!showVideo && <div className="media-message">
@@ -248,6 +248,7 @@ export function TabPlayer({ room, user, capture, quality, viewers, report }: {
           .catch(() => report('Браузер заблокировал воспроизведение.'))
       }}>Включить просмотр</Button>}
     </div>
+    <div className="player-controls" data-hidden={view.controlsHidden || undefined} inert={view.controlsHidden}>
     <div className="controls control-row">
       <span className="live"><Radio size={17} /> Прямой эфир</span>
       <div className="spacer" />
@@ -257,8 +258,7 @@ export function TabPlayer({ room, user, capture, quality, viewers, report }: {
         void video.current?.play().then(() => setPlaybackBlocked(false))
           .catch(() => report('Браузер заблокировал воспроизведение.'))
       }}>{muted ? <VolumeX size={19} /> : <Volume2 size={19} />}{muted ? 'Включить звук' : 'Выключить звук'}</Button>}
-      <Button variant="ghost" aria-label="Полноэкранный режим" onClick={() => void fullscreen(frame.current, video.current)
-        .catch((error: Error) => report(error.message))}><Maximize size={19} /></Button>
+      <FullscreenButton active={view.fullscreen} toggle={view.toggle} />
     </div>
     {!host && showVideo && status && <div className="controls control-row">
       <span className="muted" role="status">{status}</span><div className="spacer" />
@@ -266,5 +266,6 @@ export function TabPlayer({ room, user, capture, quality, viewers, report }: {
         <RotateCw size={16} /> Переподключиться
       </Button>
     </div>}
-  </div>{rtcDebugEnabled() && <RtcDiagnostics peers={peers} video={video} host={host} capture={capture} />}</>
+    </div>
+  </div></div>{rtcDebugEnabled() && <RtcDiagnostics peers={peers} video={video} host={host} capture={capture} />}</>
 }

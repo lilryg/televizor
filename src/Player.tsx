@@ -1,27 +1,14 @@
 import { useEffect, useRef, useState, type RefObject } from 'react'
-import { Maximize, Pause, Play, Volume2, VolumeX } from 'lucide-react'
+import { Pause, Play, Volume2, VolumeX } from 'lucide-react'
 import { formatTime, playbackPosition, type Room } from './model'
 import { Button } from './ui/button'
-
-type FullscreenVideo = HTMLVideoElement & { webkitEnterFullscreen?: () => void }
-
-export async function fullscreen(frame: HTMLElement | null, video: FullscreenVideo | null) {
-  if (document.fullscreenElement) await document.exitFullscreen()
-  else if (frame?.requestFullscreen) {
-    try { await frame.requestFullscreen() }
-    catch (error) {
-      if (!video?.webkitEnterFullscreen) throw error
-      video.webkitEnterFullscreen()
-    }
-  } else if (video?.webkitEnterFullscreen) video.webkitEnterFullscreen()
-  else throw new Error('Полноэкранный режим недоступен в этом браузере.')
-}
+import { FullscreenButton, usePlayerFullscreen } from './usePlayerFullscreen'
 
 export function Player({ room, offset, disabled, command, report }:
   { room: Room; offset: RefObject<number>; disabled: boolean
     command: (name: string, args: Record<string, unknown>) => Promise<void>; report: (message: string) => void }) {
   const video = useRef<HTMLVideoElement>(null)
-  const frame = useRef<HTMLDivElement>(null)
+  const view = usePlayerFullscreen(video, report)
   const latest = useRef(room)
   latest.current = room
   const [playBlocked, setPlayBlocked] = useState(false)
@@ -106,7 +93,7 @@ export function Player({ room, offset, disabled, command, report }:
     await command('seek', { version: room.version, position: value })
   }
 
-  return <div className="player" ref={frame}>
+  return <div className="player" ref={view.frame} {...view.frameProps}><div className="player-stage">
     <div className="screen">
       <video ref={video} playsInline preload="metadata"
         onDurationChange={(e) => setDuration(Number.isFinite(e.currentTarget.duration) ? e.currentTarget.duration : 0)}
@@ -118,7 +105,7 @@ export function Player({ room, offset, disabled, command, report }:
         void video.current?.play().then(() => setPlayBlocked(false)).catch(() => report('Браузер не смог запустить это видео.'))
       }}><Play size={17} /> Включить просмотр</Button>}
     </div>
-    <div className="controls">
+    <div className="player-controls controls" data-hidden={view.controlsHidden || undefined} inert={view.controlsHidden}>
       <input className="progress" type="range" aria-label="Позиция видео" min={0} max={duration || 1} step={0.1}
         value={drag ?? Math.min(current, duration)} disabled={disabled || !duration}
         onChange={(e) => setDrag(Number(e.currentTarget.value))}
@@ -138,9 +125,8 @@ export function Player({ room, offset, disabled, command, report }:
         </Button>
         <input className="volume" type="range" aria-label="Громкость" min={0} max={1} step={0.05} value={volume}
           onChange={(e) => changeVolume(Number(e.currentTarget.value))} />
-        <Button variant="ghost" aria-label="Полноэкранный режим" onClick={() => void fullscreen(frame.current, video.current)
-          .catch((error: Error) => report(error.message))}><Maximize size={19} /></Button>
+        <FullscreenButton active={view.fullscreen} toggle={view.toggle} />
       </div>
     </div>
-  </div>
+  </div></div>
 }
