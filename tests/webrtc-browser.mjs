@@ -100,7 +100,8 @@ try {
         await until(() => player.srcObject && host.connectionState === 'connected', 'guest track and connected host')
         await player.play()
         await until(() => player.videoWidth > 0 && player.currentTime > 0, 'first displayed video frame')
-        await wait(1200)
+        // Give congestion control time to ramp up from the initial encoder rate.
+        await wait(12_000)
         const [priorHost, priorGuest] = await Promise.all([stats(host), stats(guest)])
         sample = true
         callback = player.requestVideoFrameCallback(readFrame)

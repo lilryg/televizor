@@ -23,15 +23,17 @@ export function captureOptions(quality: QualityProfile): DisplayMediaStreamOptio
 }
 
 export async function tuneVideoSender(sender: RTCRtpSender, quality: QualityProfile) {
-  const parameters = sender.getParameters()
-  if (!parameters.encodings.length) return
-  const profile = qualityProfiles[quality]
-  parameters.degradationPreference = 'maintain-framerate'
-  for (const encoding of parameters.encodings) {
-    encoding.maxFramerate = profile.fps
-    if ('maxBitrate' in profile) encoding.maxBitrate = profile.maxBitrate
+  try {
+    const parameters = sender.getParameters()
+    if (!parameters.encodings.length) return
+    const profile = qualityProfiles[quality]
+    parameters.degradationPreference = 'maintain-framerate'
+    for (const encoding of parameters.encodings) {
+      encoding.maxFramerate = profile.fps
+      if ('maxBitrate' in profile) encoding.maxBitrate = profile.maxBitrate
+    }
+    await sender.setParameters(parameters)
   }
-  try { await sender.setParameters(parameters) }
   catch { /* Unsupported parameters leave the browser's default adaptation in place. */ }
 }
 

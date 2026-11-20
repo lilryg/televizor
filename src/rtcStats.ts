@@ -49,6 +49,7 @@ export function measurements(stats: Stats, prior: Stats, host: boolean, capture?
   const bytes = host ? 'bytesSent' : 'bytesReceived'
   const video = media(stats, type, 'video', bytes)
   const audio = media(stats, type, 'audio', bytes)
+  const source = host ? reference(stats, video, 'mediaSourceId') : undefined
   const transport = reference(stats, video ?? audio, 'transportId')
     ?? [...stats.values()].find((stat) => stat.type === 'transport' && stat.selectedCandidatePairId)
   const pair = reference(stats, transport, 'selectedCandidatePairId')
@@ -87,6 +88,7 @@ export function measurements(stats: Stats, prior: Stats, host: boolean, capture?
   const detail: Metric[] = host ? [
     ['Разрешение захвата', resolution(capture?.width, capture?.height)],
     ['Частота захвата по настройкам', format(capture?.frameRate, ' кадр/с', 1)],
+    ['Кадры от источника за секунду', format(number(source, 'framesPerSecond'), ' кадр/с', 1)],
     ['Частота кодирования', fps('framesEncoded')],
     ['Кадры отправлены за интервал', count(video, 'framesSent')],
     // The current outbound RTP standard does not expose an encoder drop counter.
