@@ -33,6 +33,11 @@ try {
     await page.locator('.screen').tap()
     await close.waitFor()
     assert.equal(await controls.getAttribute('inert'), null)
+    if (!player) {
+      await page.getByRole('button', { name: 'Выключить звук', exact: true }).tap()
+      await page.getByRole('button', { name: 'Включить звук', exact: true }).waitFor()
+      assert.equal(await page.locator('video').evaluate((element) => element.muted), true)
+    }
     await page.clock.fastForward(9_000)
     assert.equal(await controls.getAttribute('inert'), null, 'A tap restarts the ten-second timer')
     await close.tap()

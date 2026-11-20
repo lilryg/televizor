@@ -135,6 +135,7 @@ export function usePlayerFullscreen(video: RefObject<HTMLVideoElement | null>, r
     frameProps: {
       tabIndex: -1,
       'data-player-mode': mode,
+      'data-player-touch': autoHide || undefined,
       'data-player-rotate': (mode === 'viewport' || rotateViewport) || undefined,
       onPointerDown: autoHide ? () => wake(false) : undefined,
       onPointerUp: autoHide ? () => wake() : undefined,
