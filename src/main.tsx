@@ -5,10 +5,12 @@ import {
   Plus, Radio, ScreenShare, Square, Tv, UserRoundMinus, Users,
 } from 'lucide-react'
 import { act, enter, errorText, leaveOnPageHide, signIn, supabase } from './api'
-import { inviteCode, isOnline, validNickname, videoUrl, type Room, type RoomVisit } from './model'
+import { inviteCode, isOnline, validNickname, videoUrl, type ListedRoom, type Room, type RoomVisit } from './model'
 import { Player } from './Player'
 import { TabPlayer } from './TabPlayer'
-import { RecentRooms } from './RecentRooms'
+import { RoomList } from './RecentRooms'
+import { RoomDialog } from './RoomDialog'
+import { SlotPanel } from './SlotPanel'
 import { captureOptions, qualityProfiles, type QualityProfile } from './rtcQuality'
 import { Button } from './ui/button'
 import { useRoom } from './useRoom'
@@ -38,6 +40,7 @@ function App() {
   const [code, setCode] = useState('')
   const [invite, setIncomingInvite] = useState(readInvite)
   const [editing, setEditing] = useState(false)
+  const [roomDialog, setRoomDialog] = useState<{ kind: 'create' } | { kind: 'password'; room: ListedRoom; recent: boolean }>()
   const [busy, setBusy] = useState(false)
   const [message, setMessage] = useState('')
 
@@ -88,6 +91,15 @@ function App() {
     void run(async () => setCurrentRoom(await enter(nickname, { invitation })))
   }
 
+  function joinList(room: ListedRoom, recent: boolean) {
+    if (room.is_locked) {
+      setMessage('')
+      setRoomDialog({ kind: 'password', room, recent })
+      return
+    }
+    void run(async () => setCurrentRoom(await enter(nickname, recent ? { recentRoom: room.id } : { listedRoom: room.id })))
+  }
+
   const nickForm = <form onSubmit={submitName} className="stack">
     <label htmlFor="nickname">Твой никнейм</label>
     <input id="nickname" value={draft} autoComplete="nickname" placeholder="Например, Киноман"
@@ -123,7 +135,7 @@ function App() {
             <span className="tile-icon"><Film size={25} /></span>
             <h2>Свой кинозал</h2>
             <p>До 10 участников в комнате.</p>
-            <Button disabled={busy} onClick={() => void run(async () => setCurrentRoom(await enter(nickname)))}>
+            <Button disabled={busy} onClick={() => { setMessage(''); setRoomDialog({ kind: 'create' }) }}>
               {busy ? <LoaderCircle className="spin" size={17} /> : <Plus size={18} />} Создать комнату
             </Button>
           </section>
@@ -138,10 +150,16 @@ function App() {
           </section>
         </div>
         {message && !editing && <Notice>{message}</Notice>}
-        <RecentRooms disabled={busy} onJoin={(recentRoom) => void run(async () => {
-          setCurrentRoom(await enter(nickname, { recentRoom }))
-        })} />
+        <RoomList disabled={busy} onJoin={joinList} />
+        <RoomList recent disabled={busy} onJoin={joinList} />
       </main>}
+    {roomDialog && <RoomDialog roomTitle={roomDialog.kind === 'password' ? roomDialog.room.title : undefined}
+      onClose={() => setRoomDialog(undefined)} onSubmit={async (roomName, password) => {
+        const options = roomDialog.kind === 'create' ? { roomName, password }
+          : roomDialog.recent ? { recentRoom: roomDialog.room.id, password } : { listedRoom: roomDialog.room.id, password }
+        setCurrentRoom(await enter(nickname, options))
+        setRoomDialog(undefined)
+      }} />}
     {editing && <div className="modal-backdrop" onClick={() => !busy && setEditing(false)}>
       <dialog className="panel modal" open aria-label="Изменить никнейм" onClick={(e) => e.stopPropagation()}
         onKeyDown={(e) => { if (e.key === 'Escape' && !busy) setEditing(false) }}>
@@ -255,7 +273,7 @@ function RoomView({ id, user, visit, exit }: { id: string; user: string; visit: 
   return <main className="room-shell">
     <div className="room-heading">
       <div><div className={'connection' + (connected ? ' online' : '')}><i /> {connected ? 'На связи' : 'Восстанавливаем связь'}</div>
-        <h1>Кинозал</h1></div>
+        <h1>{room.title ?? 'Кинозал ' + room.id.slice(0, 6).toUpperCase()}</h1></div>
       <div className="room-actions">
         <Button variant="secondary" onClick={() => void perform(async () => {
           const link = new URL(location.href)
@@ -269,6 +287,7 @@ function RoomView({ id, user, visit, exit }: { id: string; user: string; visit: 
       </div>
     </div>
     <div className="room-grid">
+      <SlotPanel room={id} visit={visit} />
       <div className="room-main">
         {room.mode === 'video' && room.source ? <Player key={room.source} room={room} offset={offset} command={command}
           disabled={busy || !connected} report={setMessage} /> :

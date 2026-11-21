@@ -5,7 +5,7 @@ import type { Room } from '../src/model'
 import '../src/style.css'
 
 const room: Room = {
-  id: 'room', host: 'host', invite: 'invite', mode: 'video', stream_id: 'stream',
+  id: 'room', title: 'Тестовый кинозал', is_locked: false, host: 'host', invite: 'invite', mode: 'video', stream_id: 'stream',
   source: 'data:video/mp4;base64,', paused: true, position: 0, version: 1,
   changed_at: new Date().toISOString(), touched_at: new Date().toISOString(),
 }

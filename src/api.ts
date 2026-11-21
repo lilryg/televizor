@@ -1,5 +1,5 @@
 import { createClient } from '@supabase/supabase-js'
-import type { RecentRoom, Room, RoomVisit } from './model'
+import type { ListedRoom, RecentRoom, Room, RoomVisit } from './model'
 
 function publicKey(key?: string) {
   if (key?.startsWith('sb_publishable_')) return true
@@ -33,19 +33,40 @@ export async function signIn() {
   return result.data.user.id
 }
 
-export async function enter(nick: string, options: { invitation?: string; recentRoom?: string } = {}): Promise<RoomVisit> {
+export async function enter(nick: string, options: {
+  invitation?: string; recentRoom?: string; listedRoom?: string; roomName?: string; password?: string
+} = {}): Promise<RoomVisit> {
   const visit = crypto.randomUUID()
-  const { data, error } = await client().rpc('tv_join', {
+  const { data, error } = await client().rpc('tv_join_room', {
     nick, visit, invitation: options.invitation ?? null, recent_room: options.recentRoom ?? null,
+    listed_room: options.listedRoom ?? null, room_name: options.roomName ?? null, password: options.password ?? null,
   })
   if (error) throw error
-  return { id: data, visit }
+  if (!data?.id) throw new Error(data?.error ?? 'Комната недоступна.')
+  return { id: data.id, visit }
 }
 
 export async function recentRooms(): Promise<RecentRoom[]> {
-  const { data, error } = await client().rpc('tv_recent')
+  const { data, error } = await client().rpc('tv_recent_rooms')
   if (error) throw error
   return data ?? []
+}
+
+export async function roomDirectory(): Promise<ListedRoom[]> {
+  const { data, error } = await client().rpc('tv_directory')
+  if (error) throw error
+  return data ?? []
+}
+
+export function slots(room: string, visit: string): Promise<{ balance: number }>
+export function slots(room: string, visit: string, stake: number, requestId: string):
+  Promise<{ balance: number; reels: number[]; payout: number }>
+export async function slots(room: string, visit: string, stake = 0, requestId?: string) {
+  const { data, error } = await client().rpc('tv_slots', {
+    room, visit, stake, request_id: requestId ?? null,
+  })
+  if (error) throw error
+  return data
 }
 
 export function leaveOnPageHide(id: string, visit: string) {

@@ -1,5 +1,7 @@
 export type Room = {
   id: string
+  title: string | null
+  is_locked: boolean
   host: string
   invite: string
   mode: 'empty' | 'video' | 'tab'
@@ -14,7 +16,8 @@ export type Room = {
 
 export type Member = { user_id: string; nickname: string; status: string; seen_at: string }
 export type RoomVisit = { id: string; visit: string }
-export type RecentRoom = { id: string; last_visited_at: string; was_host: boolean; participants: number }
+export type ListedRoom = { id: string; title: string; is_locked: boolean; participants: number }
+export type RecentRoom = ListedRoom & { last_visited_at: string; was_host: boolean }
 export type Signal = {
   id: number
   stream_id: string
