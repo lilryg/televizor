@@ -1,11 +1,12 @@
 import { useEffect, useState } from 'react'
-import { DoorOpen, History } from 'lucide-react'
-import { recentRooms } from './api'
-import type { RecentRoom } from './model'
+import { DoorOpen, History, LockKeyhole, LockKeyholeOpen, Users } from 'lucide-react'
+import { recentRooms, roomDirectory } from './api'
+import type { ListedRoom, RecentRoom } from './model'
 import { Button } from './ui/button'
 
-export function RecentRooms({ disabled, onJoin }: { disabled: boolean; onJoin: (id: string) => void }) {
-  const [rooms, setRooms] = useState<RecentRoom[]>()
+export function RoomList({ recent = false, disabled, onJoin }:
+  { recent?: boolean; disabled: boolean; onJoin: (room: ListedRoom, recent: boolean) => void }) {
+  const [rooms, setRooms] = useState<(ListedRoom | RecentRoom)[]>()
   const [failed, setFailed] = useState(false)
 
   useEffect(() => {
@@ -15,7 +16,7 @@ export function RecentRooms({ disabled, onJoin }: { disabled: boolean; onJoin: (
       if (running || document.hidden) return
       running = true
       try {
-        const list = await recentRooms()
+        const list = await (recent ? recentRooms() : roomDirectory())
         if (active) { setRooms(list); setFailed(false) }
       } catch {
         if (active) setFailed(true)
@@ -31,19 +32,26 @@ export function RecentRooms({ disabled, onJoin }: { disabled: boolean; onJoin: (
       document.removeEventListener('visibilitychange', refresh)
       window.removeEventListener('focus', refresh)
     }
-  }, [])
+  }, [recent])
 
   return <section className="panel recent-rooms">
-    <h2><History size={20} /> Недавние комнаты</h2>
+    <h2>{recent ? <><History size={20} /> Недавние комнаты</> : <><Users size={20} /> Список комнат</>}</h2>
     {rooms?.length ? <ul>
       {rooms.map((room) => <li key={room.id}>
-        <span><strong>Кинозал {room.id.slice(0, 6).toUpperCase()}</strong>
-          <small>{room.was_host ? 'Хост' : 'Гость'} · {room.participants ? `В комнате: ${room.participants}` : 'Пустая'}</small>
+        <span className="room-list-info"><strong>{room.title}</strong>
+          <small>
+            {room.is_locked ? <LockKeyhole size={13} /> : <LockKeyholeOpen size={13} />}
+            {room.is_locked ? 'Закрытая' : 'Открытая'}
+            {'was_host' in room && (room.was_host ? ' · Хост' : ' · Гость')}
+            {' · '}{room.participants ? `${room.participants}/10` : 'Пустая'}
+          </small>
         </span>
-        <Button type="button" variant="secondary" disabled={disabled} onClick={() => onJoin(room.id)}>
+        <Button type="button" variant="secondary" disabled={disabled || room.participants >= 10}
+          onClick={() => onJoin(room, recent)} aria-label={'Войти в комнату «' + room.title + '»'}>
           <DoorOpen size={16} /> Войти
         </Button>
       </li>)}
-    </ul> : <p className="muted">{failed ? 'Не удалось обновить список.' : rooms ? 'Недавних комнат пока нет.' : 'Загружаем комнаты…'}</p>}
+    </ul> : <p className="muted">{failed ? 'Не удалось обновить список.' :
+      rooms ? (recent ? 'Недавних комнат пока нет.' : 'Комнат пока нет.') : 'Загружаем комнаты…'}</p>}
   </section>
 }
